@@ -89,6 +89,25 @@ impl ActorHarness {
         }
     }
 
+    pub fn new_runtime(self: &Self) -> MockRuntime {
+        let mut rt = MockRuntime::default();
+        rt.receiver = self.receiver.clone();
+        rt.actor_code_cids.insert(self.owner.clone(), *ACCOUNT_ACTOR_CODE_ID);
+        rt.actor_code_cids.insert(self.worker.clone(), *ACCOUNT_ACTOR_CODE_ID);
+        for addr in &self.control_addrs {
+            rt.actor_code_cids.insert(addr.clone(), *ACCOUNT_ACTOR_CODE_ID);
+        }
+        rt.hash_func = fixed_hasher(self.period_offset);
+        rt
+    }
+
+    pub fn set_proof_type(self: &mut Self, proof_type: RegisteredSealProof) {
+        self.seal_proof_type = proof_type;
+        self.window_post_proof_type =  proof_type.registered_window_post_proof().unwrap();
+        self.sector_size = proof_type.sector_size().unwrap();
+        self.partition_size = proof_type.window_post_partitions_sector().unwrap();
+    }
+
     pub fn construct_and_verify(self: &Self, rt: &mut MockRuntime) {
         let params = ConstructorParams {
             owner: self.owner.clone(),
@@ -206,6 +225,21 @@ impl ActorHarness {
     }
 }
 
+// Returns a fake hashing function that always arranges the first 8 bytes of the digest to be the binary
+// encoding of a target uint64.
+#[allow(dead_code)]
+fn fixed_hasher(offset: ChainEpoch) -> Box<dyn Fn(&[u8]) -> [u8; 32]> {
+    let hash = move |_: &[u8]| -> [u8;32] {
+        let mut result = [0u8;32];
+        for i in 0..8 {
+            result[i] = ((offset >> (7-i)) & 0xff) as u8;
+        }
+        result
+    };
+    Box::new(hash)
+}
+
+#[allow(dead_code)]
 pub fn check_state_invariants(_rt: &MockRuntime) {
     // TODO check state invariants
 }
