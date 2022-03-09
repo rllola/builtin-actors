@@ -1,5 +1,3 @@
-use fil_actor_miner::allow_post_proof_type;
-
 use fvm_shared::clock::ChainEpoch;
 use fvm_shared::sector::{RegisteredSealProof,RegisteredPoStProof};
 use fvm_shared::econ::TokenAmount;
@@ -8,8 +6,6 @@ mod util;
 
 #[test]
 fn basic_post_and_dispute() {
-    allow_post_proof_type(RegisteredPoStProof::StackedDRGWindow2KiBV1);
-
     let period_offset = ChainEpoch::from(100);
     let precommit_epoch = ChainEpoch::from(1);
 
@@ -17,6 +13,7 @@ fn basic_post_and_dispute() {
     h.set_proof_type(RegisteredSealProof::StackedDRG2KiBV1P1);
 
     let mut rt = h.new_runtime();
+    rt.policy.valid_post_proof_type.insert(RegisteredPoStProof::StackedDRGWindow2KiBV1);
     rt.epoch = precommit_epoch;
     rt.balance.replace(TokenAmount::from(1_000_000_000_000_000_000_000_000i128));
 
