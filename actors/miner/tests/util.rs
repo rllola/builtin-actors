@@ -123,11 +123,11 @@ impl ActorHarness {
         }
     }
 
-    pub fn get_state(self: &Self, rt: &MockRuntime) -> State {
+    pub fn get_state(&self, rt: &MockRuntime) -> State {
         rt.get_state::<State>().unwrap()
     }
 
-    pub fn new_runtime(self: &Self) -> MockRuntime {
+    pub fn new_runtime(&self) -> MockRuntime {
         let mut rt = MockRuntime::default();
 
         rt.policy.valid_post_proof_type.insert(self.window_post_proof_type);
@@ -145,14 +145,14 @@ impl ActorHarness {
         rt
     }
 
-    pub fn set_proof_type(self: &mut Self, proof_type: RegisteredSealProof) {
+    pub fn set_proof_type(&mut self, proof_type: RegisteredSealProof) {
         self.seal_proof_type = proof_type;
         self.window_post_proof_type = proof_type.registered_window_post_proof().unwrap();
         self.sector_size = proof_type.sector_size().unwrap();
         self.partition_size = proof_type.window_post_partitions_sector().unwrap();
     }
 
-    pub fn construct_and_verify(self: &Self, rt: &mut MockRuntime) {
+    pub fn construct_and_verify(&self, rt: &mut MockRuntime) {
         let params = ConstructorParams {
             owner: self.owner.clone(),
             worker: self.worker.clone(),
@@ -186,7 +186,7 @@ impl ActorHarness {
         rt.verify();
     }
 
-    pub fn set_peer_id(self: &Self, rt: &mut MockRuntime, new_id: Vec<u8>) {
+    pub fn set_peer_id(&self, rt: &mut MockRuntime, new_id: Vec<u8>) {
         let params = ChangePeerIDParams { new_id: new_id.clone() };
 
         rt.set_caller(*ACCOUNT_ACTOR_CODE_ID, self.worker);
@@ -208,7 +208,7 @@ impl ActorHarness {
         assert_eq!(new_id, info.peer_id);
     }
 
-    pub fn set_peer_id_fail(self: &Self, rt: &mut MockRuntime, new_id: Vec<u8>) {
+    pub fn set_peer_id_fail(&self, rt: &mut MockRuntime, new_id: Vec<u8>) {
         let params = ChangePeerIDParams { new_id: new_id.clone() };
 
         rt.set_caller(*ACCOUNT_ACTOR_CODE_ID, self.worker);
@@ -220,7 +220,7 @@ impl ActorHarness {
         rt.verify();
     }
 
-    pub fn set_multiaddr(self: &Self, rt: &mut MockRuntime, new_multiaddrs: Vec<BytesDe>) {
+    pub fn set_multiaddr(&self, rt: &mut MockRuntime, new_multiaddrs: Vec<BytesDe>) {
         let params = ChangeMultiaddrsParams { new_multi_addrs: new_multiaddrs.clone() };
 
         rt.set_caller(*ACCOUNT_ACTOR_CODE_ID, self.worker);
@@ -238,7 +238,7 @@ impl ActorHarness {
         assert_eq!(new_multiaddrs, info.multi_address);
     }
 
-    pub fn set_multiaddr_fail(self: &Self, rt: &mut MockRuntime, new_multiaddrs: Vec<BytesDe>) {
+    pub fn set_multiaddr_fail(&self, rt: &mut MockRuntime, new_multiaddrs: Vec<BytesDe>) {
         let params = ChangeMultiaddrsParams { new_multi_addrs: new_multiaddrs.clone() };
 
         rt.set_caller(*ACCOUNT_ACTOR_CODE_ID, self.worker);
@@ -251,7 +251,7 @@ impl ActorHarness {
     }
 
     pub fn get_control_addresses(
-        self: &Self,
+        &self,
         rt: &mut MockRuntime,
     ) -> (Address, Address, Vec<Address>) {
         rt.expect_validate_caller_any();
@@ -265,7 +265,7 @@ impl ActorHarness {
     }
 
     pub fn commit_and_prove_sectors(
-        self: &mut Self,
+        &mut self,
         rt: &mut MockRuntime,
         num_sectors: usize,
         lifetime_periods: u64,
@@ -314,13 +314,13 @@ impl ActorHarness {
         info
     }
 
-    pub fn get_deadline_info(self: &Self, rt: &MockRuntime) -> DeadlineInfo {
+    pub fn get_deadline_info(&self, rt: &MockRuntime) -> DeadlineInfo {
         let state = self.get_state(rt);
         state.recorded_deadline_info(&rt.policy, rt.epoch)
     }
 
     fn make_pre_commit_params(
-        self: &Self,
+        &self,
         sector_no: u64,
         challenge: ChainEpoch,
         expiration: ChainEpoch,
@@ -341,12 +341,12 @@ impl ActorHarness {
         }
     }
 
-    fn make_prove_commit_params(self: &Self, sector_no: u64) -> ProveCommitSectorParams {
+    fn make_prove_commit_params(&self, sector_no: u64) -> ProveCommitSectorParams {
         ProveCommitSectorParams { sector_number: sector_no, proof: vec![0u8; 192] }
     }
 
     fn pre_commit_sector(
-        self: &Self,
+        &self,
         rt: &mut MockRuntime,
         params: PreCommitSectorParams,
         conf: PreCommitConfig,
@@ -423,7 +423,7 @@ impl ActorHarness {
     }
 
     fn get_precommit(
-        self: &Self,
+        &self,
         rt: &mut MockRuntime,
         sector_number: SectorNumber,
     ) -> SectorPreCommitOnChainInfo {
@@ -431,7 +431,7 @@ impl ActorHarness {
         state.get_precommitted_sector(&rt.store, sector_number).unwrap().unwrap()
     }
 
-    fn expect_query_network_info(self: &Self, rt: &mut MockRuntime) {
+    fn expect_query_network_info(&self, rt: &mut MockRuntime) {
         let current_power = CurrentTotalPowerReturn {
             raw_byte_power: self.network_raw_power.clone(),
             quality_adj_power: self.network_qa_power.clone(),
@@ -461,7 +461,7 @@ impl ActorHarness {
     }
 
     fn prove_commit_sector_and_confirm(
-        self: &Self,
+        &self,
         rt: &mut MockRuntime,
         pc: &SectorPreCommitOnChainInfo,
         params: ProveCommitSectorParams,
@@ -475,7 +475,7 @@ impl ActorHarness {
     }
 
     fn prove_commit_sector(
-        self: &Self,
+        &self,
         rt: &mut MockRuntime,
         pc: &SectorPreCommitOnChainInfo,
         params: ProveCommitSectorParams,
@@ -539,7 +539,7 @@ impl ActorHarness {
     }
 
     fn confirm_sector_proofs_valid(
-        self: &Self,
+        &self,
         rt: &mut MockRuntime,
         cfg: ProveCommitConfig,
         pcs: Vec<SectorPreCommitOnChainInfo>,
@@ -569,7 +569,7 @@ impl ActorHarness {
     }
 
     fn confirm_sector_proofs_valid_internal(
-        self: &Self,
+        &self,
         rt: &mut MockRuntime,
         cfg: ProveCommitConfig,
         pcs: &Vec<SectorPreCommitOnChainInfo>,
@@ -654,12 +654,12 @@ impl ActorHarness {
         }
     }
 
-    fn get_sector(self: &Self, rt: &MockRuntime, sector_number: SectorNumber) -> SectorOnChainInfo {
+    fn get_sector(&self, rt: &MockRuntime, sector_number: SectorNumber) -> SectorOnChainInfo {
         let state = self.get_state(rt);
         state.get_sector(&rt.store, sector_number).unwrap().unwrap()
     }
 
-    fn advance_to_epoch_with_cron(self: &Self, rt: &mut MockRuntime, epoch: ChainEpoch) {
+    fn advance_to_epoch_with_cron(&self, rt: &mut MockRuntime, epoch: ChainEpoch) {
         let mut deadline = self.get_deadline_info(rt);
         while deadline.last() < epoch {
             self.advance_deadline(rt, CronConfig::empty());
@@ -668,7 +668,7 @@ impl ActorHarness {
         rt.epoch = epoch;
     }
 
-    pub fn advance_to_deadline(self: &Self, rt: &mut MockRuntime, dlidx: u64) -> DeadlineInfo {
+    pub fn advance_to_deadline(&self, rt: &mut MockRuntime, dlidx: u64) -> DeadlineInfo {
         let mut dlinfo = self.deadline(rt);
         while dlinfo.index != dlidx {
             dlinfo = self.advance_deadline(rt, CronConfig::empty());
@@ -676,13 +676,13 @@ impl ActorHarness {
         dlinfo
     }
 
-    fn deadline(self: &Self, rt: &MockRuntime) -> DeadlineInfo {
+    fn deadline(&self, rt: &MockRuntime) -> DeadlineInfo {
         let state = self.get_state(rt);
         state.recorded_deadline_info(&rt.policy, rt.epoch)
     }
 
     pub fn advance_deadline(
-        self: &Self,
+        &self,
         rt: &mut MockRuntime,
         mut cfg: CronConfig,
     ) -> DeadlineInfo {
@@ -704,7 +704,7 @@ impl ActorHarness {
         state.deadline_info(&rt.policy, rt.epoch)
     }
 
-    fn on_deadline_cron(self: &Self, rt: &mut MockRuntime, cfg: CronConfig) {
+    fn on_deadline_cron(&self, rt: &mut MockRuntime, cfg: CronConfig) {
         let state = self.get_state(rt);
         rt.expect_validate_caller_addr(vec![*STORAGE_POWER_ACTOR_ADDR]);
 
@@ -808,7 +808,7 @@ impl ActorHarness {
     }
 
     pub fn submit_window_post(
-        self: &Self,
+        &self,
         rt: &mut MockRuntime,
         deadline: &DeadlineInfo,
         partitions: Vec<PoStPartition>,
@@ -826,7 +826,7 @@ impl ActorHarness {
     }
 
     fn submit_window_post_raw(
-        self: &Self,
+        &self,
         rt: &mut MockRuntime,
         deadline: &DeadlineInfo,
         infos: Vec<SectorOnChainInfo>,
@@ -837,7 +837,7 @@ impl ActorHarness {
     }
 
     pub fn dispute_window_post(
-        self: &Self,
+        &self,
         rt: &mut MockRuntime,
         deadline: &DeadlineInfo,
         proof_index: u64,
@@ -847,11 +847,11 @@ impl ActorHarness {
         panic!("IMPLEMENTME");
     }
 
-    pub fn get_deadline(self: &Self, rt: &MockRuntime, dlidx: u64) -> Deadline {
+    pub fn get_deadline(&self, rt: &MockRuntime, dlidx: u64) -> Deadline {
         panic!("IMPLEMENTME");
     }
 
-    fn caller_addrs(self: &Self) -> Vec<Address> {
+    fn caller_addrs(&self) -> Vec<Address> {
         let mut caller_addrs = self.control_addrs.clone();
         caller_addrs.push(self.worker.clone());
         caller_addrs.push(self.owner.clone());
