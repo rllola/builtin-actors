@@ -2,8 +2,8 @@ use fil_actor_miner as miner;
 //use fil_actors_runtime as runtime;
 
 use fvm_shared::clock::ChainEpoch;
-use fvm_shared::sector::{RegisteredSealProof,RegisteredPoStProof};
 use fvm_shared::econ::TokenAmount;
+use fvm_shared::sector::{RegisteredPoStProof, RegisteredSealProof};
 //use fvm_shared::HAMT_BIT_WIDTH;
 
 use bitfield::BitField;
@@ -26,7 +26,7 @@ fn basic_post_and_dispute() {
 
     h.construct_and_verify(&mut rt);
 
-    let sectors = h.commit_and_prove_sectors(&mut rt, 1, DEFAULT_SECTOR_EXPIRATION, vec!(), true);
+    let sectors = h.commit_and_prove_sectors(&mut rt, 1, DEFAULT_SECTOR_EXPIRATION, vec![], true);
     let sector = sectors[0].clone();
     let pwr = miner::power_for_sector(h.sector_size, &sector);
 
@@ -36,16 +36,29 @@ fn basic_post_and_dispute() {
     let dlinfo = h.advance_to_deadline(&mut rt, dlidx);
 
     // Submit PoSt
-    let post_partitions = vec![miner::PoStPartition{ index: pidx, skipped: bitfield::UnvalidatedBitField::Validated(BitField::new()) }];
+    let post_partitions = vec![miner::PoStPartition {
+        index: pidx,
+        skipped: bitfield::UnvalidatedBitField::Validated(BitField::new()),
+    }];
     let post_sectors = vec![sector.clone()];
-    h.submit_window_post(&mut rt, &dlinfo, post_partitions, post_sectors, util::PoStConfig::with_expected_power_delta(&pwr));
+    h.submit_window_post(
+        &mut rt,
+        &dlinfo,
+        post_partitions,
+        post_sectors,
+        util::PoStConfig::with_expected_power_delta(&pwr),
+    );
 
     // Verify proof recorded
     let deadline = h.get_deadline(&rt, dlidx);
     let deadline_bits = vec![pidx];
     util::assert_bitfield_equals(&deadline.partitions_posted, &deadline_bits);
 
-    let posts = util::amt_to_vec::<miner::WindowedPoSt>(&rt, &deadline.optimistic_post_submissions, miner::DEADLINE_OPTIMISTIC_POST_SUBMISSIONS_AMT_BITWIDTH);
+    let posts = util::amt_to_vec::<miner::WindowedPoSt>(
+        &rt,
+        &deadline.optimistic_post_submissions,
+        miner::DEADLINE_OPTIMISTIC_POST_SUBMISSIONS_AMT_BITWIDTH,
+    );
     assert_eq!(posts.len(), 1);
     util::assert_bitfield_equals(&posts[0].partitions, &deadline_bits);
 
@@ -55,15 +68,22 @@ fn basic_post_and_dispute() {
 
     // Proofs should exist in snapshot.
     let deadline2 = h.get_deadline(&rt, dlidx);
-    assert_eq!(&deadline.optimistic_post_submissions, &deadline2.optimistic_post_submissions_snapshot);
+    assert_eq!(
+        &deadline.optimistic_post_submissions,
+        &deadline2.optimistic_post_submissions_snapshot
+    );
 
     // Try a failed dispute.
     let dispute_sectors = vec![sector.clone()];
     h.dispute_window_post(&mut rt, &dlinfo, 0, &dispute_sectors, None);
 
     // Now a successful dispute.
-    let expected_fee = miner::pledge_penalty_for_invalid_windowpost(&h.epoch_reward_smooth, &h.epoch_qa_power_smooth, &pwr.qa);
-    let expected_result = util::PoStDisputeResult{
+    let expected_fee = miner::pledge_penalty_for_invalid_windowpost(
+        &h.epoch_reward_smooth,
+        &h.epoch_qa_power_smooth,
+        &pwr.qa,
+    );
+    let expected_result = util::PoStDisputeResult {
         expected_power_delta: -pwr,
         expected_penalty: expected_fee,
         expected_reward: miner::BASE_REWARD_FOR_DISPUTED_WINDOW_POST.clone(),

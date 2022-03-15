@@ -388,8 +388,6 @@ impl MockRuntime {
         self.expectations.borrow_mut().expect_delete_actor = Some(beneficiary);
     }
 
-
-
     pub fn call<A: ActorCode>(
         &mut self,
         method_num: MethodNum,
@@ -469,17 +467,28 @@ impl MockRuntime {
     }
 
     #[allow(dead_code)]
-    pub fn expect_get_randomness_from_tickets(&mut self, tag: DomainSeparationTag, epoch: ChainEpoch, entropy: Vec<u8>, out: Randomness) {
-        let a = ExpectRandomness{ tag, epoch, entropy, out };
+    pub fn expect_get_randomness_from_tickets(
+        &mut self,
+        tag: DomainSeparationTag,
+        epoch: ChainEpoch,
+        entropy: Vec<u8>,
+        out: Randomness,
+    ) {
+        let a = ExpectRandomness { tag, epoch, entropy, out };
         self.expectations.borrow_mut().expect_get_randomness_tickets = Some(a);
     }
 
     #[allow(dead_code)]
-    pub fn expect_get_randomness_from_beacon(&mut self, tag: DomainSeparationTag, epoch: ChainEpoch, entropy: Vec<u8>, out: Randomness) {
-        let a = ExpectRandomness{ tag, epoch, entropy, out };
+    pub fn expect_get_randomness_from_beacon(
+        &mut self,
+        tag: DomainSeparationTag,
+        epoch: ChainEpoch,
+        entropy: Vec<u8>,
+        out: Randomness,
+    ) {
+        let a = ExpectRandomness { tag, epoch, entropy, out };
         self.expectations.borrow_mut().expect_get_randomness_beacon = Some(a);
     }
-
 }
 
 impl MessageInfo for MockRuntime {
@@ -617,16 +626,32 @@ impl Runtime<MemoryBlockstore> for MockRuntime {
         epoch: ChainEpoch,
         entropy: &[u8],
     ) -> Result<Randomness, ActorError> {
-        let expected =
-            self.expectations.borrow_mut().expect_get_randomness_tickets.take().expect("unexpected call to get_randomness_from_tickets");
+        let expected = self
+            .expectations
+            .borrow_mut()
+            .expect_get_randomness_tickets
+            .take()
+            .expect("unexpected call to get_randomness_from_tickets");
 
         assert!(epoch <= self.epoch, "attempt to get randomness from future");
-        assert!(expected.tag == tag, "unexpected domain separation tag, expected: {:?}, actual: {:?}",
-                expected.tag, tag);
-        assert!(expected.epoch == epoch, "unexpected epoch, expected: {:?}, actual: {:?}",
-                expected.epoch, epoch);
-        assert!(expected.entropy == Vec::from(entropy), "unexpected entroy, expected {:?}, actual: {:?}",
-                expected.entropy, entropy);
+        assert!(
+            expected.tag == tag,
+            "unexpected domain separation tag, expected: {:?}, actual: {:?}",
+            expected.tag,
+            tag
+        );
+        assert!(
+            expected.epoch == epoch,
+            "unexpected epoch, expected: {:?}, actual: {:?}",
+            expected.epoch,
+            epoch
+        );
+        assert!(
+            expected.entropy == Vec::from(entropy),
+            "unexpected entroy, expected {:?}, actual: {:?}",
+            expected.entropy,
+            entropy
+        );
 
         Ok(expected.out)
     }
@@ -637,16 +662,32 @@ impl Runtime<MemoryBlockstore> for MockRuntime {
         epoch: ChainEpoch,
         entropy: &[u8],
     ) -> Result<Randomness, ActorError> {
-        let expected =
-            self.expectations.borrow_mut().expect_get_randomness_beacon.take().expect("unexpected call to get_randomness_from_beacon");
+        let expected = self
+            .expectations
+            .borrow_mut()
+            .expect_get_randomness_beacon
+            .take()
+            .expect("unexpected call to get_randomness_from_beacon");
 
         assert!(epoch <= self.epoch, "attempt to get randomness from future");
-        assert!(expected.tag == tag, "unexpected domain separation tag, expected: {:?}, actual: {:?}",
-                expected.tag, tag);
-        assert!(expected.epoch == epoch, "unexpected epoch, expected: {:?}, actual: {:?}",
-                expected.epoch, epoch);
-        assert!(expected.entropy == Vec::from(entropy), "unexpected entroy, expected {:?}, actual: {:?}",
-                expected.entropy, entropy);
+        assert!(
+            expected.tag == tag,
+            "unexpected domain separation tag, expected: {:?}, actual: {:?}",
+            expected.tag,
+            tag
+        );
+        assert!(
+            expected.epoch == epoch,
+            "unexpected epoch, expected: {:?}, actual: {:?}",
+            expected.epoch,
+            epoch
+        );
+        assert!(
+            expected.entropy == Vec::from(entropy),
+            "unexpected entroy, expected {:?}, actual: {:?}",
+            expected.entropy,
+            entropy
+        );
 
         Ok(expected.out)
     }
