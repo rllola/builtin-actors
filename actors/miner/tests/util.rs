@@ -250,10 +250,7 @@ impl ActorHarness {
         rt.verify();
     }
 
-    pub fn get_control_addresses(
-        &self,
-        rt: &mut MockRuntime,
-    ) -> (Address, Address, Vec<Address>) {
+    pub fn get_control_addresses(&self, rt: &mut MockRuntime) -> (Address, Address, Vec<Address>) {
         rt.expect_validate_caller_any();
 
         let result =
@@ -681,11 +678,7 @@ impl ActorHarness {
         state.recorded_deadline_info(&rt.policy, rt.epoch)
     }
 
-    pub fn advance_deadline(
-        &self,
-        rt: &mut MockRuntime,
-        mut cfg: CronConfig,
-    ) -> DeadlineInfo {
+    pub fn advance_deadline(&self, rt: &mut MockRuntime, mut cfg: CronConfig) -> DeadlineInfo {
         let state = self.get_state(rt);
         let deadline = new_deadline_info_from_offset_and_epoch(
             &rt.policy,
