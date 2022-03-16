@@ -7,7 +7,7 @@ use fil_actor_market::{
 use fil_actor_miner::{
     initial_pledge_for_power, new_deadline_info_from_offset_and_epoch, qa_power_for_weight, Actor,
     ChangeMultiaddrsParams, ChangePeerIDParams, ConfirmSectorProofsParams, CronEventPayload,
-    Deadline, DeadlineInfo, DeferredCronEventParams, GetControlAddressesReturn, Method,
+    Deadline, DeadlineInfo, Deadlines, DeferredCronEventParams, GetControlAddressesReturn, Method,
     MinerConstructorParams as ConstructorParams, PoStPartition, PowerPair, PreCommitSectorParams,
     ProveCommitSectorParams, SectorOnChainInfo, SectorPreCommitOnChainInfo, State,
     SubmitWindowedPoStParams, VestingFunds, CRON_EVENT_PROVING_DEADLINE,
@@ -19,8 +19,8 @@ use fil_actor_reward::{Method as RewardMethod, ThisEpochRewardReturn};
 use fil_actors_runtime::runtime::Runtime;
 use fil_actors_runtime::test_utils::*;
 use fil_actors_runtime::{
-    make_map_with_root_and_bitwidth, DealWeight, BURNT_FUNDS_ACTOR_ADDR, INIT_ACTOR_ADDR,
-    REWARD_ACTOR_ADDR, STORAGE_MARKET_ACTOR_ADDR, STORAGE_POWER_ACTOR_ADDR,
+    ActorError, Array, DealWeight, BURNT_FUNDS_ACTOR_ADDR, INIT_ACTOR_ADDR, REWARD_ACTOR_ADDR,
+    STORAGE_MARKET_ACTOR_ADDR, STORAGE_POWER_ACTOR_ADDR,
 };
 
 use fvm_shared::address::Address;
@@ -38,8 +38,8 @@ use fvm_shared::encoding::{BytesDe, RawBytes};
 use fvm_shared::error::ExitCode;
 use fvm_shared::randomness::Randomness;
 use fvm_shared::sector::{
-    PoStProof, RegisteredPoStProof, RegisteredSealProof, SealVerifyInfo, SectorID, SectorNumber,
-    SectorSize, StoragePower,
+    PoStProof, RegisteredPoStProof, RegisteredSealProof, SealVerifyInfo, SectorID, SectorInfo,
+    SectorNumber, SectorSize, StoragePower, WindowPoStVerifyInfo,
 };
 use fvm_shared::smooth::FilterEstimate;
 
@@ -47,7 +47,7 @@ use cid::Cid;
 use multihash::derive::Multihash;
 use multihash::MultihashDigest;
 
-use bitfield::BitField;
+use bitfield::{BitField, UnvalidatedBitField};
 use rand::prelude::*;
 
 use std::collections::HashMap;
@@ -815,7 +815,8 @@ impl ActorHarness {
             chain_commit_epoch: deadline.challenge,
             chain_commit_rand: Randomness(Vec::from(b"chaincommitment".clone())),
         };
-        self.submit_window_post_raw(rt, deadline, infos, params, cfg)
+        self.submit_window_post_raw(rt, deadline, infos, params, cfg).unwrap();
+        rt.verify();
     }
 
     fn submit_window_post_raw(
@@ -825,8 +826,98 @@ impl ActorHarness {
         infos: Vec<SectorOnChainInfo>,
         params: SubmitWindowedPoStParams,
         cfg: PoStConfig,
-    ) {
-        panic!("IMPLEMENTME");
+    ) -> Result<RawBytes, ActorError> {
+        rt.set_caller(*ACCOUNT_ACTOR_CODE_ID, self.worker);
+        let chain_commit_rand = match cfg.chain_randomness {
+            Some(r) => r,
+            None => params.chain_commit_rand.clone(),
+        };
+        rt.expect_get_randomness_from_tickets(
+            DomainSeparationTag::PoStChainCommit,
+            params.chain_commit_epoch,
+            Vec::new(),
+            chain_commit_rand,
+        );
+        rt.expect_validate_caller_addr(self.caller_addrs());
+
+        let challenge_rand = Randomness(Vec::from([10, 11, 12, 13]));
+
+        // only sectors that are not skipped and not existing non-recovered faults will be verified
+        let mut all_ignored = BitField::new();
+        let mut all_recovered = BitField::new();
+        let dln = self.get_deadline(rt, deadline.index);
+        for p in &params.partitions {
+            let partition = dln.load_partition(&rt.store, p.index).unwrap();
+            let expected_faults = &partition.faults - &partition.recoveries;
+            let skipped = get_bitfield(&p.skipped);
+            all_ignored |= &(&expected_faults | &skipped);
+            all_recovered |= &(&partition.recoveries - &skipped);
+        }
+        let optimistic = all_recovered.is_empty();
+
+        // find the first non-faulty, non-skipped sector in poSt to replace all faulty sectors.
+        let mut good_info: Option<SectorOnChainInfo> = None;
+        for ci in &infos {
+            if !all_ignored.get(ci.sector_number) {
+                good_info = Some(ci.clone());
+                break;
+            }
+        }
+
+        // good_info == None indicates all the sectors have been skipped and PoSt verification should not occur
+        if !optimistic && good_info.is_some() {
+            let entropy = RawBytes::serialize(self.receiver.clone()).unwrap();
+            rt.expect_get_randomness_from_beacon(
+                DomainSeparationTag::WindowedPoStChallengeSeed,
+                deadline.challenge,
+                entropy.to_vec(),
+                challenge_rand.clone(),
+            );
+
+            let mut proof_infos = Vec::with_capacity(infos.len());
+            for ci in infos {
+                let mut si = ci.clone();
+                if all_ignored.get(ci.sector_number) {
+                    si = good_info.clone().unwrap();
+                }
+                let proof_info = SectorInfo {
+                    proof: si.seal_proof,
+                    sector_number: si.sector_number,
+                    sealed_cid: si.sealed_cid,
+                };
+                proof_infos.push(proof_info);
+            }
+
+            let vi = WindowPoStVerifyInfo {
+                randomness: challenge_rand.clone(),
+                proofs: params.proofs.clone(),
+                challenged_sectors: proof_infos,
+                prover: RECEIVER_ID,
+            };
+            let exit_code = match cfg.verification_exit {
+                Some(exit_code) => exit_code,
+                None => ExitCode::Ok,
+            };
+            rt.expect_verify_post(vi, exit_code);
+        }
+
+        if cfg.expected_power_delta.is_some() {
+            let power_delta = cfg.expected_power_delta.unwrap();
+            let claim = UpdateClaimedPowerParams {
+                raw_byte_delta: power_delta.raw,
+                quality_adjusted_delta: power_delta.qa,
+            };
+            rt.expect_send(
+                *STORAGE_POWER_ACTOR_ADDR,
+                PowerMethod::UpdateClaimedPower as u64,
+                RawBytes::serialize(claim).unwrap(),
+                TokenAmount::from(0),
+                RawBytes::default(),
+                ExitCode::Ok,
+            );
+        }
+
+        rt.call::<Actor>(Method::SubmitWindowedPoSt as u64, &RawBytes::serialize(params).unwrap())
     }
 
     pub fn dispute_window_post(
@@ -841,7 +932,13 @@ impl ActorHarness {
     }
 
     pub fn get_deadline(&self, rt: &MockRuntime, dlidx: u64) -> Deadline {
-        panic!("IMPLEMENTME");
+        let dls = self.get_deadlines(rt);
+        dls.load_deadline(&rt.policy, &rt.store, dlidx).unwrap()
+    }
+
+    fn get_deadlines(&self, rt: &MockRuntime) -> Deadlines {
+        let state = self.get_state(&rt);
+        state.load_deadlines(&rt.store).unwrap()
     }
 
     fn caller_addrs(&self) -> Vec<Address> {
@@ -856,12 +953,17 @@ impl ActorHarness {
 pub struct PoStConfig {
     pub chain_randomness: Option<Randomness>,
     pub expected_power_delta: Option<PowerPair>,
+    pub verification_exit: Option<ExitCode>,
 }
 
 #[allow(dead_code)]
 impl PoStConfig {
     pub fn with_expected_power_delta(pwr: &PowerPair) -> PoStConfig {
-        PoStConfig { chain_randomness: None, expected_power_delta: Some(pwr.clone()) }
+        PoStConfig {
+            chain_randomness: None,
+            expected_power_delta: Some(pwr.clone()),
+            verification_exit: None,
+        }
     }
 }
 
@@ -931,8 +1033,12 @@ pub struct PoStDisputeResult {
 }
 
 #[allow(dead_code)]
-pub fn assert_bitfield_equals(bf: &BitField, bits: &Vec<u64>) {
-    panic!("IMPLEMENTME");
+pub fn assert_bitfield_equals(bf: &BitField, bits: &[u64]) {
+    let mut rbf = BitField::new();
+    for bit in bits {
+        rbf.set(*bit);
+    }
+    assert!(bf == &rbf);
 }
 
 // multihash library doesn't support poseidon hashing, so we fake it
@@ -991,14 +1097,21 @@ fn make_deferred_cron_event_params(
     }
 }
 
+fn get_bitfield(ubf: &UnvalidatedBitField) -> BitField {
+    match ubf {
+        UnvalidatedBitField::Validated(bf) => bf.clone(),
+        UnvalidatedBitField::Unvalidated(bytes) => BitField::from_bytes(&bytes).unwrap(),
+    }
+}
+
 #[allow(dead_code)]
-pub fn amt_to_vec<T>(rt: &MockRuntime, c: &Cid, bitwidth: u32) -> Vec<T>
+pub fn amt_to_vec<T>(rt: &MockRuntime, c: &Cid) -> Vec<T>
 where
     T: Clone + Serialize + for<'a> Deserialize<'a>,
 {
     let mut result = Vec::new();
-    let map = make_map_with_root_and_bitwidth(c, &rt.store, bitwidth).unwrap();
-    map.for_each(|_, v: &T| {
+    let arr = Array::<T, _>::load(c, &rt.store).unwrap();
+    arr.for_each(|_, v: &T| {
         result.push(v.clone());
         Ok(())
     })

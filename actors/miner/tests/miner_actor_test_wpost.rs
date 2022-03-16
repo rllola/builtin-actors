@@ -1,10 +1,8 @@
 use fil_actor_miner as miner;
-//use fil_actors_runtime as runtime;
 
 use fvm_shared::clock::ChainEpoch;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::sector::{RegisteredPoStProof, RegisteredSealProof};
-//use fvm_shared::HAMT_BIT_WIDTH;
 
 use bitfield::BitField;
 
@@ -51,14 +49,10 @@ fn basic_post_and_dispute() {
 
     // Verify proof recorded
     let deadline = h.get_deadline(&rt, dlidx);
-    let deadline_bits = vec![pidx];
+    let deadline_bits = [pidx];
     util::assert_bitfield_equals(&deadline.partitions_posted, &deadline_bits);
 
-    let posts = util::amt_to_vec::<miner::WindowedPoSt>(
-        &rt,
-        &deadline.optimistic_post_submissions,
-        miner::DEADLINE_OPTIMISTIC_POST_SUBMISSIONS_AMT_BITWIDTH,
-    );
+    let posts = util::amt_to_vec::<miner::WindowedPoSt>(&rt, &deadline.optimistic_post_submissions);
     assert_eq!(posts.len(), 1);
     util::assert_bitfield_equals(&posts[0].partitions, &deadline_bits);
 
