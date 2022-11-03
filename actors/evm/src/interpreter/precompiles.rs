@@ -3,7 +3,9 @@ use std::{borrow::Cow, convert::TryInto, marker::PhantomData};
 use super::U256;
 use fil_actors_runtime::runtime::{Primitives, Runtime};
 use fvm_ipld_blockstore::Blockstore;
+use fvm_ipld_encoding::{Cbor, RawBytes};
 use fvm_shared::{
+    address::Address,
     bigint::BigUint,
     crypto::{
         hash::SupportedHashes,
@@ -11,6 +13,7 @@ use fvm_shared::{
     },
 };
 use num_traits::{One, Zero};
+use serde::Serialize;
 use substrate_bn::{pairing_batch, AffineG1, AffineG2, Fq, Fq2, Fr, Group, Gt, G1, G2};
 use uint::byteorder::{ByteOrder, LE};
 
@@ -26,6 +29,7 @@ pub enum PrecompileError {
     EcGroupErr(GroupError),
     IncorrectInputSize,
     OutOfGas,
+    IncorrectAddress,
 }
 
 impl From<CurveError> for PrecompileError {
@@ -49,8 +53,10 @@ impl From<GroupError> for PrecompileError {
 pub type PrecompileFn<RT> = fn(&RT, &[u8]) -> PrecompileResult;
 pub type PrecompileResult = Result<Vec<u8>, PrecompileError>; // TODO i dont like vec
 
+const PRECOMPILES_LEN: usize = 12;
+
 /// Generates a list of precompile smart contracts, index + 1 is the address (another option is to make an enum)
-const fn gen_precompiles<RT: Primitives>() -> [PrecompileFn<RT>; 9] {
+const fn gen_precompiles<RT: Primitives>() -> [PrecompileFn<RT>; PRECOMPILES_LEN] {
     [
         ec_recover, // ecrecover 0x01
         sha256,     // SHA2-256 0x02
@@ -61,13 +67,17 @@ const fn gen_precompiles<RT: Primitives>() -> [PrecompileFn<RT>; 9] {
         ec_mul,     // ecMul 0x07
         ec_pairing, // ecPairing 0x08
         blake2f,    // blake2f 0x09
+        test,       // test 0x0a
+        cbor_bool,  // cbor_bool 0x0b
+        cbor_address, // cbor_address 0x0c
+        // cbor_add_signer, // cbor_add_signer 0x0d
     ]
 }
 
 pub struct Precompiles<BS, RT>(PhantomData<BS>, PhantomData<RT>);
 
 impl<BS: Blockstore, RT: Runtime<BS>> Precompiles<BS, RT> {
-    const PRECOMPILES: [PrecompileFn<RT>; 9] = gen_precompiles();
+    const PRECOMPILES: [PrecompileFn<RT>; PRECOMPILES_LEN] = gen_precompiles();
     const MAX_PRECOMPILE: U256 = {
         let mut limbs = [0u64; 4];
         limbs[0] = Self::PRECOMPILES.len() as u64;
@@ -371,6 +381,60 @@ fn blake2f<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
     let output = hasher.output().to_vec();
     Ok(output)
 }
+
+fn test<RT: Primitives>(_: &RT, _input: &[u8]) -> PrecompileResult {
+    Ok(vec![])
+}
+
+fn cbor_bool<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
+    if input[input.len() - 1] == 0x01 {
+        Ok(vec![0xf5])
+    } else {
+        Ok(vec![0xf4])
+    }
+}
+
+fn cbor_address<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
+    let mut addr: Vec<u8> = vec![0x00];
+    for add in input {
+        if *add != 0x00 {
+            addr.push(*add);
+        }
+    }
+
+    let a = Address::from_bytes(addr.as_slice()).map_err(|_| PrecompileError::IncorrectAddress )?;
+    let bytes = a.marshal_cbor().map_err(|_| PrecompileError::IncorrectAddress )?;
+
+    Ok(bytes)
+}
+
+/*fn cbor_add_signer<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
+    let address: &[u8] = &input[0..32];
+    let mut addr: Vec<u8> = vec![0x00];
+    for add in address {
+        if *add != 0x00 {
+            addr.push(*add);
+        }
+    }
+    let a = Address::from_bytes(addr.as_slice()).map_err(|_| PrecompileError::IncorrectAddress )?;
+
+    let bool_buffer: &[u8] = &input[32..];
+    let increase: bool;
+    if bool_buffer[bool_buffer.len() - 1] == 0x01 {
+        increase = true;
+    } else {
+        increase = false;
+    }
+
+    let add_signer_param = fil_actor_multisig::AddSignerParams {
+        signer: a,
+        increase,
+    };
+
+    let bytes = RawBytes::serialize(add_signer_param).map_err(|_| PrecompileError::IncorrectAddress )?;
+
+    Ok(bytes.to_vec())
+}*/
 
 #[cfg(test)]
 mod tests {
