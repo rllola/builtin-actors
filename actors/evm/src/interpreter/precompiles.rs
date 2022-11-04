@@ -53,7 +53,7 @@ impl From<GroupError> for PrecompileError {
 pub type PrecompileFn<RT> = fn(&RT, &[u8]) -> PrecompileResult;
 pub type PrecompileResult = Result<Vec<u8>, PrecompileError>; // TODO i dont like vec
 
-const PRECOMPILES_LEN: usize = 12;
+const PRECOMPILES_LEN: usize = 14;
 
 /// Generates a list of precompile smart contracts, index + 1 is the address (another option is to make an enum)
 const fn gen_precompiles<RT: Primitives>() -> [PrecompileFn<RT>; PRECOMPILES_LEN] {
@@ -68,9 +68,10 @@ const fn gen_precompiles<RT: Primitives>() -> [PrecompileFn<RT>; PRECOMPILES_LEN
         ec_pairing, // ecPairing 0x08
         blake2f,    // blake2f 0x09
         test,       // test 0x0a
-        cbor_bool,  // cbor_bool 0x0b
-        cbor_address, // cbor_address 0x0c
-        // cbor_add_signer, // cbor_add_signer 0x0d
+        cbor_bool_precompile,  // cbor_bool_precompile 0x0b
+        cbor_address_precompile, // cbor_address_precompile 0x0c
+        cbor_add_signer, // cbor_add_signer 0x0d
+        cbor_array, // cbor_array 0x0e
     ]
 }
 
@@ -386,7 +387,8 @@ fn test<RT: Primitives>(_: &RT, _input: &[u8]) -> PrecompileResult {
     Ok(vec![])
 }
 
-fn cbor_bool<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
+
+fn cbor_bool(input: &[u8]) -> PrecompileResult {
     if input[input.len() - 1] == 0x01 {
         Ok(vec![0xf5])
     } else {
@@ -394,9 +396,14 @@ fn cbor_bool<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
     }
 }
 
-fn cbor_address<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
+fn cbor_bool_precompile<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
+    cbor_bool(input)
+}
+
+fn cbor_address(input: &[u8]) -> PrecompileResult {
     let mut addr: Vec<u8> = vec![0x00];
-    for add in input {
+    // because in solidity an address is only 20 bytes and we remove the 'ff' byte
+    for add in &input[13..32] {
         if *add != 0x00 {
             addr.push(*add);
         }
@@ -405,36 +412,28 @@ fn cbor_address<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
     let a = Address::from_bytes(addr.as_slice()).map_err(|_| PrecompileError::IncorrectAddress )?;
     let bytes = a.marshal_cbor().map_err(|_| PrecompileError::IncorrectAddress )?;
 
-    Ok(bytes)
+    Ok(bytes.to_vec())
 }
 
-/*fn cbor_add_signer<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
+fn cbor_address_precompile<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
+    cbor_address(input)
+}
+
+fn cbor_array<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
+    Ok(input.to_vec())
+}
+
+fn cbor_add_signer<RT: Primitives>(_: &RT, input: &[u8]) -> PrecompileResult {
     let address: &[u8] = &input[0..32];
-    let mut addr: Vec<u8> = vec![0x00];
-    for add in address {
-        if *add != 0x00 {
-            addr.push(*add);
-        }
-    }
-    let a = Address::from_bytes(addr.as_slice()).map_err(|_| PrecompileError::IncorrectAddress )?;
+    let bool: &[u8] = &input[32..];
 
-    let bool_buffer: &[u8] = &input[32..];
-    let increase: bool;
-    if bool_buffer[bool_buffer.len() - 1] == 0x01 {
-        increase = true;
-    } else {
-        increase = false;
-    }
+    
+    let mut bytes : Vec<u8> = vec![];
+    bytes.extend(cbor_address(address)?);
+    bytes.extend(cbor_bool(bool)?);
 
-    let add_signer_param = fil_actor_multisig::AddSignerParams {
-        signer: a,
-        increase,
-    };
-
-    let bytes = RawBytes::serialize(add_signer_param).map_err(|_| PrecompileError::IncorrectAddress )?;
-
-    Ok(bytes.to_vec())
-}*/
+    Ok(bytes)
+}
 
 #[cfg(test)]
 mod tests {
